@@ -192,6 +192,7 @@ cga_putc(int c)
 	}
 
 	// What is the purpose of this?
+	// 防止显示区域溢出，将最上方的显示冲刷
 	if (crt_pos >= CRT_SIZE) {
 		int i;
 

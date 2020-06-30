@@ -68,7 +68,7 @@ stab_binsearch(const struct Stab *stabs, int *region_left, int *region_right,
 		any_matches = 1;
 		if (stabs[m].n_value < addr) {
 			*region_left = m;
-			l = true_m + 1;
+			l = true_m + 1;//
 		} else if (stabs[m].n_value > addr) {
 			*region_right = m - 1;
 			r = m - 1;
@@ -179,7 +179,22 @@ debuginfo_eip(uintptr_t addr, struct Eipdebuginfo *info)
 	//	Look at the STABS documentation and <inc/stab.h> to find
 	//	which one.
 	// Your code here.
+  int olline = lline, orline = rline;
+  stab_binsearch(stabs, &olline, &orline, N_SOL, (!(lline == lfile && rline == rfile))*addr + info->eip_fn_addr);
+  // 如果没有找到N_SOL
+  if (olline > orline) {
+    stab_binsearch(stabs, &lline, &rline, N_SLINE, (!(lline == lfile && rline == rfile))*addr + info->eip_fn_addr);
+    // 如果在N_SLINE也没有找到
+    if (lline > rline) {
+       return -1;
+    }
+	olline = lline;
+	orline = rline;
+  }
+  // 记录找到的行号
 
+  
+  info->eip_line = stabs[olline].n_desc;
 
 	// Search backwards from the line number for the relevant filename
 	// stab.
