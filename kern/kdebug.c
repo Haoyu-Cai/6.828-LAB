@@ -89,7 +89,7 @@ stab_binsearch(const struct Stab *stabs, int *region_left, int *region_right,
 		     l > *region_left && stabs[l].n_type != type;
 		     l--)
 			/* do nothing */;
-		*region_left = l;
+		*region_left = l; 
 	}
 }
 
