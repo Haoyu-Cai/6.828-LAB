@@ -22,11 +22,13 @@ static struct PageInfo *page_free_list;	// Free list of physical pages
 // --------------------------------------------------------------
 // Detect machine's physical memory setup.
 // --------------------------------------------------------------
-
+ 
 static int
 nvram_read(int r)
 {
 	return mc146818_read(r) | (mc146818_read(r + 1) << 8);
+	//前一个是LSB，后一个是MSB。这里相当于完成一个拼接操作。
+	//从而得到一个十六位的数字。
 }
 
 static void
@@ -102,8 +104,16 @@ boot_alloc(uint32_t n)
 	// to a multiple of PGSIZE.
 	//
 	// LAB 2: Your code here.
+	
+	if( nextfree + n > ( char*) (npages * 4096) )
+			panic("raise a OOM error.");
 
-	return NULL;
+	if( n > 0 ){
+		nextfree = ROUNDUP(nextfree + n, PGSIZE);	
+		//这里只是简单的进行了nextfree的后移，尚不确定是否真正完成了n字节的分配。	
+	}	
+
+	return nextfree;
 }
 
 // Set up a two-level page table:
