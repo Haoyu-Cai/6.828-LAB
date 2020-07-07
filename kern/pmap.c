@@ -104,12 +104,12 @@ boot_alloc(uint32_t n)
 	// to a multiple of PGSIZE.
 	//
 	// LAB 2: Your code here.
-	
 	if( nextfree + n > ( char*) (npages * 4096) )
 			panic("raise a OOM error.");
-
 	if( n > 0 ){
-		nextfree = ROUNDUP(nextfree + n, PGSIZE);	
+		char* start = nextfree;
+		nextfree = ROUNDUP(nextfree + n, PGSIZE);
+		return start;	
 		//这里只是简单的进行了nextfree的后移，尚不确定是否真正完成了n字节的分配。	
 	}	
 
@@ -159,6 +159,11 @@ mem_init(void)
 	// to initialize all fields of each struct PageInfo to 0.
 	// Your code goes here:
 
+
+	uint32_t PIAsize = npages * sizeof(struct PageInfo);
+	//PIAsize 意味着PageInfoArray的尺寸
+	pages = (pde_t *) boot_alloc(PIAsize);
+	memset( pages, 0, PIAsize);
 
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
