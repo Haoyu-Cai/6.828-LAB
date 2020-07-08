@@ -246,6 +246,20 @@ mem_init(void)
 // allocator functions below to allocate and deallocate physical
 // memory via the page_free_list.
 //
+void 
+set_freepage(size_t i)
+{
+	pages[i].pp_ref = 0;
+	pages[i].pp_link = page_free_list;
+	page_free_list = &pages[i];
+}
+void 
+set_usedpage(size_t i)
+{
+	pages[i].pp_ref = 0;
+	pages[i].pp_link = NULL;
+}
+
 void
 page_init(void)
 {
@@ -266,12 +280,25 @@ page_init(void)
 	// Change the code to reflect this.
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
-	// 开始填写该位置
+
+	// size_t i;
+	
+	// for (i = 0; i < npages; i++) {
+	// 	pages[i].pp_ref = 0;
+	// 	pages[i].pp_link = page_free_list;
+	// 	page_free_list = &pages[i];
+	// }
+	
+	uint32_t PIAsize = npages * sizeof(struct PageInfo);
+	uint32_t PIAbound = ROUNDUP( pages + PIAsize, PGSIZE);
 	size_t i;
-	for (i = 0; i < npages; i++) {
-		pages[i].pp_ref = 0;
-		pages[i].pp_link = page_free_list;
-		page_free_list = &pages[i];
+	pages[0].pp_ref = 1;
+	for (i = 1; i < npages; i++){
+		if( i < npages_basemem) set_freepage(i);
+		else if( i >= IOPHYSMEM / PGSIZE || i < EXTPHYSMEM) set_freepage(i);
+		else if( i >= (uint32_t) pages / PGSIZE || i < PIAbound / PGSIZE) set_usedpage(i);
+		else if( i == (uint32_t) kern_pgdir / PGSIZE) set_usedpage(i);
+		else set_freepage(i);
 	}
 }
 
@@ -290,8 +317,19 @@ page_init(void)
 struct PageInfo *
 page_alloc(int alloc_flags)
 {
+	// if out of free memory
+	if(page_free_list == NULL) return NULL;
+
+	struct PageInfo* allocatedpage = page_free_list;
+	page_free_list = allocatedpage->pp_link;
+	allocatedpage->pp_link = NULL;
+
+	if( alloc_flags & ALLOC_ZERO ){
+		void* pagekva = page2kva(allocatedpage);
+		memset( pagekva, 0, PGSIZE);
+	}
 	// Fill this function in
-	return 0;
+	return allocatedpage;
 }
 
 //
@@ -304,6 +342,11 @@ page_free(struct PageInfo *pp)
 	// Fill this function in
 	// Hint: You may want to panic if pp->pp_ref is nonzero or
 	// pp->pp_link is not NULL.
+	if( pp->pp_ref != 0 ) panic("This page is still used!");
+	if( pp->pp_link != NULL ) panic("User is double freeing a page!");
+	pp->pp_link = page_free_list;
+	page_free_list = pp;
+	return;
 }
 
 //
