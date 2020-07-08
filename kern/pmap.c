@@ -546,12 +546,10 @@ check_page_free_list(bool only_low_memory)
 
 	// if there's a page that shouldn't be on the free list,
 	// try to make sure it eventually causes trouble.
-	int i = 0;
 	for (pp = page_free_list; pp; pp = pp->pp_link){
 		//出错位置！！！JOS出现三重错误
 		if (PDX(page2pa(pp)) < pdx_limit)
 			memset(page2kva(pp), 0x97, 128);
-		i++;
 		cprintf("%d ", i);
 	}
 	first_free_page = (char *) boot_alloc(0);
