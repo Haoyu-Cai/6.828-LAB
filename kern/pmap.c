@@ -104,7 +104,8 @@ boot_alloc(uint32_t n)
 	// to a multiple of PGSIZE.
 	//
 	// LAB 2: Your code here.
-	if( nextfree + n > ( char*) (npages * 4096) )
+	uint64_t sum = (uint32_t)nextfree + n;
+	if(  sum > 0x100000000 )
 			panic("raise a OOM error.");
 	if( n > 0 ){
 		char* start = nextfree;
@@ -135,7 +136,7 @@ mem_init(void)
 	i386_detect_memory();
 
 	// Remove this line when you're ready to test this function.
-	panic("mem_init: This function is not finished\n");
+	// panic("mem_init: This function is not finished\n");
 
 	//////////////////////////////////////////////////////////////////////
 	// create initial page directory.
@@ -162,7 +163,7 @@ mem_init(void)
 
 	uint32_t PIAsize = npages * sizeof(struct PageInfo);
 	//PIAsize 意味着PageInfoArray的尺寸
-	pages = (pde_t *) boot_alloc(PIAsize);
+	pages = (struct PageInfo*) boot_alloc(PIAsize);
 	memset( pages, 0, PIAsize);
 
 	//////////////////////////////////////////////////////////////////////
@@ -176,7 +177,8 @@ mem_init(void)
 	check_page_free_list(1);
 	check_page_alloc();
 	check_page();
-
+	
+	panic("mem_init: This function is not finished\n");
 	//////////////////////////////////////////////////////////////////////
 	// Now we set up virtual memory
 
@@ -256,7 +258,7 @@ set_freepage(size_t i)
 void 
 set_usedpage(size_t i)
 {
-	pages[i].pp_ref = 0;
+	pages[i].pp_ref = 1;//
 	pages[i].pp_link = NULL;
 }
 
@@ -288,16 +290,35 @@ page_init(void)
 	// 	pages[i].pp_link = page_free_list;
 	// 	page_free_list = &pages[i];
 	// }
-	
+
+
+
+	// size_t i;
+	// pages[0].pp_ref = 1;
+	// physaddr_t first_free_addr = PADDR(boot_alloc(0));
+    // size_t first_free_page = first_free_addr / PGSIZE;
+	// 
+	// for (i = 1; i < npages; i++){
+	// 	if( i < npages_basemem) set_freepage(i);
+	// 	else if( i >= IOPHYSMEM / PGSIZE && i < EXTPHYSMEM / PGSIZE) set_usedpage(i);
+	// 	else if( i < first_free_page) set_usedpage(i);
+	// 	// else if( i == (uint32_t) kern_pgdir / PGSIZE) set_usedpage(i);
+	// 	else set_freepage(i);
+	// }
+
+	//bug hints：对IO hole的理解有问题，这块空间应该保留下来、而不是作为一块内存被页表管理。
+	//另外，要注意 IOPHYSMEM 和 EXTPHYSMEM 都是物理地址
+	//而PIAbound实质上已经是一个虚拟地址了（页表虚拟化由entry.s开启），因此首先需要将其转换为一个物理地址。
+	//再将EXTPHYSMEM到PIAbound之间的页插入free_list 
 	uint32_t PIAsize = npages * sizeof(struct PageInfo);
-	uint32_t PIAbound = ROUNDUP( pages + PIAsize, PGSIZE);
+	char* PIAbound = ROUNDUP( (char *)pages + PIAsize, PGSIZE);
+	physaddr_t addr = PADDR(PIAbound);
 	size_t i;
 	pages[0].pp_ref = 1;
 	for (i = 1; i < npages; i++){
 		if( i < npages_basemem) set_freepage(i);
-		else if( i >= IOPHYSMEM / PGSIZE || i < EXTPHYSMEM) set_freepage(i);
-		else if( i >= (uint32_t) pages / PGSIZE || i < PIAbound / PGSIZE) set_usedpage(i);
-		else if( i == (uint32_t) kern_pgdir / PGSIZE) set_usedpage(i);
+		else if( i >= IOPHYSMEM / PGSIZE && i < EXTPHYSMEM / PGSIZE) set_usedpage(i);
+		else if( i < addr / PGSIZE) set_usedpage(i);
 		else set_freepage(i);
 	}
 }
@@ -342,7 +363,7 @@ page_free(struct PageInfo *pp)
 	// Fill this function in
 	// Hint: You may want to panic if pp->pp_ref is nonzero or
 	// pp->pp_link is not NULL.
-	if( pp->pp_ref != 0 ) panic("This page is still used!");
+	if( pp->pp_ref != 0 ) panic("This page is still referenced!");
 	if( pp->pp_link != NULL ) panic("User is double freeing a page!");
 	pp->pp_link = page_free_list;
 	page_free_list = pp;
@@ -525,10 +546,14 @@ check_page_free_list(bool only_low_memory)
 
 	// if there's a page that shouldn't be on the free list,
 	// try to make sure it eventually causes trouble.
-	for (pp = page_free_list; pp; pp = pp->pp_link)
+	int i = 0;
+	for (pp = page_free_list; pp; pp = pp->pp_link){
+		//出错位置！！！JOS出现三重错误
 		if (PDX(page2pa(pp)) < pdx_limit)
 			memset(page2kva(pp), 0x97, 128);
-
+		i++;
+		cprintf("%d ", i);
+	}
 	first_free_page = (char *) boot_alloc(0);
 	for (pp = page_free_list; pp; pp = pp->pp_link) {
 		// check that we didn't corrupt the free list itself
