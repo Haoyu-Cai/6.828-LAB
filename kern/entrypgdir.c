@@ -29,6 +29,9 @@ pde_t entry_pgdir[NPDENTRIES] = {
 
 // Entry 0 of the page table maps to physical page 0, entry 1 to
 // physical page 1, etc.
+
+// 一个有趣的问题：开发者设计这个pgtable的目的是什么？
+// 想明白这个问题pgdir的初始化方式就不言而喻了。
 __attribute__((__aligned__(PGSIZE)))
 pte_t entry_pgtable[NPTENTRIES] = {
 	0x000000 | PTE_P | PTE_W,

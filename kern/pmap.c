@@ -177,8 +177,8 @@ mem_init(void)
 	check_page_free_list(1);
 	check_page_alloc();
 	check_page();
-	
-	panic("mem_init: This function is not finished\n");
+	panic("page_move: This function is not finished\n");
+
 	//////////////////////////////////////////////////////////////////////
 	// Now we set up virtual memory
 
@@ -339,7 +339,7 @@ struct PageInfo *
 page_alloc(int alloc_flags)
 {
 	// if out of free memory
-	if(page_free_list == NULL) return NULL;
+	if(!page_free_list) return NULL;
 
 	struct PageInfo* allocatedpage = page_free_list;
 	page_free_list = allocatedpage->pp_link;
@@ -347,7 +347,7 @@ page_alloc(int alloc_flags)
 
 	if( alloc_flags & ALLOC_ZERO ){
 		void* pagekva = page2kva(allocatedpage);
-		memset( pagekva, 0, PGSIZE);
+		memset( pagekva, '\0', PGSIZE);
 	}
 	// Fill this function in
 	return allocatedpage;
@@ -386,6 +386,7 @@ page_decref(struct PageInfo* pp)
 // This requires walking the two-level page table structure.
 //
 // The relevant page table page might not exist yet.
+// 这里的页表页指的不是页表所指向的页，而是储存页表的页
 // If this is true, and create == false, then pgdir_walk returns NULL.
 // Otherwise, pgdir_walk allocates a new page table page with page_alloc.
 //    - If the allocation fails, pgdir_walk returns NULL.
@@ -406,8 +407,39 @@ page_decref(struct PageInfo* pp)
 pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
-	// Fill this function in
+	//Fill this function in
+	uintptr_t vaddr = (uintptr_t)va;
+
+	pde_t pde = pgdir[PDX(vaddr)];
+	physaddr_t pt_addr =  PTE_ADDR(pde);
+
+	// //将pte中PPN转换为页表的物理地址
+	// //再将页表的物理地址转换为虚拟地址从而去引用
+	pte_t* pt_va = KADDR(pt_addr);
+	// pte_t pte = pt_va[PTX(vaddr)];
+
+	uint32_t flag = pde & PTE_P;
+	// physaddr_t pte_addr =  (pte & (0xFFFFF000));
+	if( flag ) return pt_va + PTX(vaddr);
+	if( !create) return NULL;
+	else{
+
+		struct PageInfo* alloc_page = page_alloc(ALLOC_ZERO);
+		//更正：通过将flag置位ALLOC_ZERO，将整个页表空间清零
+		if(!alloc_page) return NULL;
+		alloc_page->pp_ref++;
+		physaddr_t alloc_addr = page2pa(alloc_page);
+		pgdir[PDX(vaddr)] = alloc_addr |  (PTE_U | PTE_P |PTE_W);
+		return (pte_t *)page2kva(alloc_page) + PTX(vaddr);
+		//更正：注意void指针只移动一个字节，因此为了得到正确的偏移量，必须首先将void*变量转换为pte_t *类型
+		//否则出现偏移量问题。
+	}
+
 	return NULL;
+
+
+
+
 }
 
 //
@@ -425,6 +457,15 @@ static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
 	// Fill this function in
+	
+	if( size == 0 ) return;
+	pte_t* pte_va = pgdir_walk( pgdir, (void *)va, 1);
+	*pte_va = pa | perm | PTE_P;
+	boot_map_region( pgdir, va + PGSIZE, size - PGSIZE, pa + PGSIZE, perm);
+
+
+
+
 }
 
 //
@@ -456,7 +497,28 @@ int
 page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 {
 	// Fill this function in
+	physaddr_t pa =  page2pa( pp);
+	pte_t* pte_va = pgdir_walk( pgdir, va, 1);
+	if( pte_va == NULL) return -E_NO_MEM;
+	int flag_PTEP = (*pte_va) & PTE_P;
+	if( flag_PTEP){
+		if (PTE_ADDR(*pte_va) == page2pa(pp)) {
+			//这里要注意到重新插入该页的边界情况不适用page_remove
+			//当重新建立pa到va的映射时，
+			//我们不希望该页表项被置零(这是冗余的操作)
+			//也不希望tlb表中的相应条目被改动(希望保留在其中)
+			//因此不应使用page_remove
+			//只需要简单地将pp_ref减小即可
+			pp->pp_ref--;
+		}else
+		page_remove( pgdir, va);
+		// tlb_invalidate( pgdir, va);
+	}
+	*pte_va = pa | perm | PTE_P;
+	pp->pp_ref++;
 	return 0;
+
+
 }
 
 //
@@ -474,7 +536,20 @@ struct PageInfo *
 page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
 	// Fill this function in
-	return NULL;
+	pte_t* pte_va = pgdir_walk( pgdir, va, 0);
+	if(pte_va == NULL) return NULL;
+	if( pte_store != NULL) {
+		// (*va_addr) = pte_va;
+		*pte_store = pte_va;
+	}
+	uint32_t flag = PTE_P & (*pte_va);
+	if(!flag) return NULL;
+	physaddr_t pte_addr =  PTE_ADDR(*pte_va);
+	struct PageInfo * pp = pa2page( pte_addr);
+	// pte_t** va_addr = va;
+
+	return pp;
+
 }
 
 //
@@ -496,6 +571,13 @@ void
 page_remove(pde_t *pgdir, void *va)
 {
 	// Fill this function in
+	pte_t* pte;
+	pte_t **pte_store = &pte;
+	struct PageInfo * pp = page_lookup( pgdir, va, pte_store);
+	if(pp == NULL) return;
+	**pte_store = (pte_t)0;
+	page_decref(pp);
+	tlb_invalidate(pgdir, va);
 }
 
 //
@@ -550,7 +632,6 @@ check_page_free_list(bool only_low_memory)
 		//出错位置！！！JOS出现三重错误
 		if (PDX(page2pa(pp)) < pdx_limit)
 			memset(page2kva(pp), 0x97, 128);
-		cprintf("%d ", i);
 	}
 	first_free_page = (char *) boot_alloc(0);
 	for (pp = page_free_list; pp; pp = pp->pp_link) {

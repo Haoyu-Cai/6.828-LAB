@@ -59,6 +59,8 @@ entry:
 	# Turn on paging.
 	movl	%cr0, %eax
 	orl	$(CR0_PE|CR0_PG|CR0_WP), %eax
+	//CR0_PE启用保护模式、CR0_PG启用分页模式 
+	//CR0_WP写保护，当WP为1时，管理员不能写R/W没有置位的页
 	movl	%eax, %cr0
 
 	# Now paging is enabled, but we're still running at a low EIP
